@@ -1,19 +1,3 @@
-/*
-  UDPSendReceive.pde:
-  This sketch receives UDP message strings, prints them to the serial port
-  and sends an "acknowledge" string back to the sender
-
-  A Processing sketch is included at the end of file that can be used to send
-  and received messages for testing with a computer.
-
-  created 21 Aug 2010
-  by Michael Margolis
-
-  This code is in the public domain.
-
-  adapted from Ethernet library examples
-*/
-
 
 #include <ESP8266WiFi.h>
 #include <WiFiUdp.h>
@@ -23,38 +7,55 @@
 #define STAPSK ""
 #endif
 
-unsigned int localPort = 8889;  // local port to listen on
-
-char COMMAND[] = "command";  // a string to send back
-char TAKEOFF[] = "takeoff";  // a string to send back
-
+unsigned int commandPort = 8889;  // local port to send on
+unsigned int statePort = 8890;  // local port to send on
+char packetBuffer[UDP_TX_PACKET_MAX_SIZE + 1]; 
 WiFiUDP Udp;
 
-void setup() {
+void setup() 
+{
   Serial.begin(115200);
+  Serial.setTimeout(100);
   WiFi.mode(WIFI_STA);
   WiFi.begin(STASSID, STAPSK);
-  Serial.print("Attempting Connection!");
+  Serial.print("\n Attempting Connection!");
   while (WiFi.status() != WL_CONNECTED) {
     Serial.print('.');
     delay(500);
   }
   Serial.print("Connected! IP address: ");
   Serial.println(WiFi.localIP());
-  Serial.printf("Sending UDP on port %d\n", localPort);
+  Serial.printf("Sending UDP on port %d\n", commandPort);
   //Listen to state later
-  // Udp.begin(localPort);
-  
-  // send a reply, to the IP address and port that sent us the packet we received
-  Udp.beginPacket("192.168.10.1", localPort);
-  Udp.write(COMMAND);
-  Udp.endPacket();
-  delay(2000);
-  Udp.beginPacket("192.168.10.1", localPort);
-  Udp.write(TAKEOFF);
+  Udp.begin(statePort);
+  // Drone Start Up Commands
+  telloCmd("192.168.10.1", commandPort,"command");
+}
+
+void telloCmd(char* address, unsigned int port, const char* command)
+{
+  Serial.print("Running Command: ");
+  Serial.println(command);
+  Udp.beginPacket(address, port);
+  Udp.write(command);
   Udp.endPacket();
 }
 
 void loop() {
+    // if there's data available, read a packet
+  int packetSize = Udp.parsePacket();
+  if (packetSize) {
+    Serial.printf("Received packet of size %d from %s:%d\n    (to %s:%d, free heap = %d B)\n", packetSize, Udp.remoteIP().toString().c_str(), Udp.remotePort(), Udp.destinationIP().toString().c_str(), Udp.localPort(), ESP.getFreeHeap());
 
+    // read the packet into packetBufffer
+    int n = Udp.read(packetBuffer, UDP_TX_PACKET_MAX_SIZE);
+    packetBuffer[n] = 0;
+    Serial.println("Contents:");
+    Serial.println(packetBuffer);
+  }
+  String commandString = Serial.readString();
+  commandString.trim();
+  if(commandString.length() != 0){
+    telloCmd("192.168.10.1", commandPort, commandString.c_str());
+  }
 }
